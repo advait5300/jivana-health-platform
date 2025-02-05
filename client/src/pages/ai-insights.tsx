@@ -3,6 +3,13 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { TestAnalysis } from "@/components/blood-test/test-analysis";
 import type { BloodTest } from "@shared/schema";
 
+interface AIAnalysis {
+  summary: string;
+  insights: string[];
+  recommendations: string[];
+  riskFactors: string[];
+}
+
 export default function AIInsights() {
   const { data: test, isLoading } = useQuery<BloodTest>({
     queryKey: ["/api/latest-test"],
@@ -31,10 +38,12 @@ export default function AIInsights() {
     );
   }
 
+  const aiAnalysis = test.aiAnalysis as AIAnalysis | undefined;
+
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-8">AI Health Insights</h1>
-      
+
       <div className="grid grid-cols-1 gap-6">
         <Card>
           <CardHeader>
@@ -54,7 +63,7 @@ export default function AIInsights() {
           </CardContent>
         </Card>
 
-        {test.aiAnalysis && <TestAnalysis analysis={test.aiAnalysis} />}
+        {aiAnalysis && <TestAnalysis analysis={aiAnalysis} />}
       </div>
     </div>
   );
