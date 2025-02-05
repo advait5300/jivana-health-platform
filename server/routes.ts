@@ -80,29 +80,48 @@ export function registerRoutes(app: Express) {
       // Generate unique S3 key for the file
       const fileKey = `${userId}/${nanoid()}-${file.originalname}`;
 
-      // Upload file to S3
-      await uploadFile(fileKey, file.buffer);
+      try {
+        // Upload file to S3 (or mock storage in development)
+        await uploadFile(fileKey, file.buffer);
+      } catch (uploadError) {
+        console.error('File upload error:', uploadError);
+        return res.status(500).json({ message: "Failed to upload file" });
+      }
+
+      let parsedResults;
+      try {
+        parsedResults = JSON.parse(results);
+      } catch (parseError) {
+        console.error('Results parsing error:', parseError);
+        return res.status(400).json({ message: "Invalid results format" });
+      }
 
       // Store test data in PostgreSQL
       const testData = insertBloodTestSchema.parse({
         userId: Number(userId),
         datePerformed: new Date(datePerformed),
         fileKey,
-        results: JSON.parse(results),
+        results: parsedResults,
       });
 
       const test = await storage.createBloodTest(testData);
 
-      // Generate AI analysis
-      const analysis = await analyzeBloodTest(JSON.parse(results));
-
-      // Update test record with analysis
-      const updatedTest = await storage.updateBloodTestAnalysis(test.id, analysis);
+      // Try to generate AI analysis, but don't fail if it errors
+      let updatedTest = test;
+      try {
+        const analysis = await analyzeBloodTest(parsedResults);
+        updatedTest = await storage.updateBloodTestAnalysis(test.id, analysis);
+      } catch (analysisError) {
+        console.error('AI analysis error:', analysisError);
+        // Continue without analysis
+      }
 
       res.json(updatedTest);
     } catch (error) {
       console.error('Error processing test upload:', error);
-      res.status(400).json({ message: error instanceof Error ? error.message : 'Upload failed' });
+      res.status(400).json({
+        message: error instanceof Error ? error.message : 'Upload failed',
+      });
     }
   });
 
