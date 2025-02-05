@@ -33,6 +33,26 @@ export function registerRoutes(app: Express) {
     res.json(test);
   });
 
+  app.get("/api/latest-test", async (req, res) => {
+    try {
+      // For demo, we'll use userId 1
+      const tests = await storage.getBloodTestsByUser(1);
+      const latestTest = tests.reduce((latest, test) => {
+        return !latest || new Date(test.datePerformed) > new Date(latest.datePerformed)
+          ? test
+          : latest;
+      }, null);
+
+      if (!latestTest) {
+        return res.status(404).json({ message: "No tests found" });
+      }
+
+      res.json(latestTest);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch latest test" });
+    }
+  });
+
   app.post("/api/test/upload", upload.single("file"), async (req, res) => {
     try {
       const { userId, datePerformed, results } = req.body;
@@ -53,7 +73,7 @@ export function registerRoutes(app: Express) {
       });
 
       const test = await storage.createBloodTest(testData);
-      
+
       // Trigger AI analysis
       const analysis = await analyzeBloodTest(testData.results);
       const updatedTest = await storage.updateBloodTestAnalysis(test.id, analysis);

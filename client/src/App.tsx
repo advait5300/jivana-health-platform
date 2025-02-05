@@ -6,6 +6,7 @@ import { Header } from "@/components/layout/header";
 import Dashboard from "@/pages/dashboard";
 import Upload from "@/pages/upload";
 import TestDetails from "@/pages/test-details";
+import AIInsights from "@/pages/ai-insights";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 
@@ -16,6 +17,7 @@ function Router() {
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/upload" component={Upload} />
       <Route path="/test/:id" component={TestDetails} />
+      <Route path="/ai-insights" component={AIInsights} />
       <Route component={NotFound} />
     </Switch>
   );

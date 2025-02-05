@@ -21,10 +21,11 @@ export function Header() {
             Jivana
           </h1>
         </Link>
-        
+
         <nav className="flex items-center gap-6">
           <Link href="/dashboard">Dashboard</Link>
           <Link href="/upload">Upload Test</Link>
+          <Link href="/ai-insights">AI Insights</Link>
           <Button variant="ghost" onClick={handleLogout}>
             Logout
           </Button>
