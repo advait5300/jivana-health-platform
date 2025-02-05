@@ -4,7 +4,54 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { Construct } from 'constructs';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 
+
+/**
+ * Infrastructure stack for Jivana Health Platform
+ * 
+ * Current Architecture:
+ * - Authentication: AWS Cognito User Pool
+ * - Storage: S3 for files, RDS PostgreSQL for data
+ * - Networking: VPC with public/private subnets
+ * 
+ * Data Flow:
+ * 1. User authenticates via Cognito
+ * 2. Frontend uploads blood test PDFs to S3
+ * 3. Test data stored in RDS PostgreSQL
+ * 4. GPT analysis runs on Express server
+ * 
+ * Future Improvements:
+ * - Add Lambda for async GPT processing
+ * - Use ECS for Express server scaling
+ * - Implement SQS for upload processing
+ */
+
+/**
+ * Production-ready enhancements for Jivana Platform
+ * TODO: Uncomment and implement these components for production deployment
+ * 
+ * Enhanced Architecture:
+ * 1. Upload Flow:
+ *    - Frontend → S3 (PDF upload)
+ *    - S3 event → Lambda trigger
+ *    - Lambda → SQS (queues processing request)
+ *    - ECS tasks process queue messages
+ * 
+ * 2. Analysis Flow:
+ *    - ECS container reads from queue
+ *    - Processes blood test data
+ *    - Calls OpenAI API
+ *    - Updates RDS with results
+ * 
+ * 3. High Availability:
+ *    - Multiple ECS tasks across AZs
+ *    - RDS Multi-AZ deployment
+ *    - CloudFront for frontend assets
+ *    - Application Load Balancer
+ */
 export class JivanaStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -65,7 +112,7 @@ export class JivanaStack extends cdk.Stack {
       ],
     });
 
-    // Create VPC for RDS
+    // Create VPC for RDS and ECS
     const vpc = new ec2.Vpc(this, 'JivanaVPC', {
       maxAzs: 2,
       natGateways: 1,
@@ -96,7 +143,7 @@ export class JivanaStack extends cdk.Stack {
       'Allow PostgreSQL access from within VPC',
     );
 
-    // Create RDS instance
+    // Create RDS instance with Multi-AZ for production
     const dbInstance = new rds.DatabaseInstance(this, 'JivanaDatabase', {
       engine: rds.DatabaseInstanceEngine.postgres({
         version: rds.PostgresEngineVersion.VER_15,
@@ -115,7 +162,77 @@ export class JivanaStack extends cdk.Stack {
       deleteAutomatedBackups: false,
       removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
       storageEncrypted: true,
+      multiAz: true, // Enable Multi-AZ for production
     });
+
+    // SQS Queue for processing uploaded tests
+    const uploadQueue = new sqs.Queue(this, 'TestUploadQueue', {
+      visibilityTimeout: cdk.Duration.seconds(300),
+      retentionPeriod: cdk.Duration.days(14),
+    });
+
+    // Lambda function for processing uploads
+    const uploadProcessor = new lambda.Function(this, 'UploadProcessor', {
+      runtime: lambda.Runtime.NODEJS_18_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset('lambda/upload-processor'),
+      environment: {
+        QUEUE_URL: uploadQueue.queueUrl,
+      },
+    });
+
+    // Security group for ECS tasks
+    const apiSecurityGroup = new ec2.SecurityGroup(this, 'ApiSecurityGroup', {
+      vpc,
+      description: 'Security group for API containers',
+      allowAllOutbound: true,
+    });
+
+    // ECS Cluster setup
+    const cluster = new ecs.Cluster(this, 'JivanaCluster', {
+      vpc,
+      containerInsights: true,
+    });
+
+    // Task Definition for API
+    const taskDefinition = new ecs.FargateTaskDefinition(this, 'ApiTaskDef', {
+      memoryLimitMiB: 2048,
+      cpu: 1024,
+    });
+
+    // Container Definition
+    const container = taskDefinition.addContainer('ApiContainer', {
+      image: ecs.ContainerImage.fromAsset('../'),
+      environment: {
+        NODE_ENV: 'production',
+        DATABASE_URL: dbInstance.instanceEndpoint.socketAddress,
+      },
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'JivanaApi' }),
+    });
+
+    container.addPortMappings({
+      containerPort: 5000,
+    });
+
+    // ECS Service with Auto Scaling
+    const service = new ecs.FargateService(this, 'ApiService', {
+      cluster,
+      taskDefinition,
+      desiredCount: 2,
+      assignPublicIp: false,
+      securityGroups: [apiSecurityGroup],
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+    });
+
+    const scaling = service.autoScaleTaskCount({
+      minCapacity: 2,
+      maxCapacity: 4,
+    });
+
+    scaling.scaleOnCpuUtilization('CpuScaling', {
+      targetUtilizationPercent: 70,
+    });
+
 
     // Output values
     new cdk.CfnOutput(this, 'UserPoolId', {

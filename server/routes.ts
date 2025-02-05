@@ -7,6 +7,10 @@ import { nanoid } from "nanoid";
 import { insertBloodTestSchema, insertSharedTestSchema } from "@shared/schema";
 import multer from "multer";
 
+/**
+ * Configure multer for handling file uploads
+ * Store files in memory for processing before S3 upload
+ */
 const upload = multer({ memory: true });
 
 export function registerRoutes(app: Express) {
@@ -49,10 +53,20 @@ export function registerRoutes(app: Express) {
 
       res.json(latestTest);
     } catch (error) {
+      console.error('Error fetching latest test:', error);
       res.status(500).json({ message: "Failed to fetch latest test" });
     }
   });
 
+  /**
+   * Upload and process a new blood test
+   * Business Logic Flow:
+   * 1. Receive PDF file and test results
+   * 2. Upload PDF to S3
+   * 3. Store test data in PostgreSQL
+   * 4. Generate AI analysis using GPT-4o
+   * 5. Update test record with analysis
+   */
   app.post("/api/test/upload", upload.single("file"), async (req, res) => {
     try {
       const { userId, datePerformed, results } = req.body;
@@ -62,9 +76,13 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
+      // 1. Generate unique S3 key for the file
       const fileKey = `${userId}/${nanoid()}-${file.originalname}`;
+
+      // 2. Upload file to S3
       await uploadFile(fileKey, file.buffer);
 
+      // 3. Store test data in PostgreSQL
       const testData = insertBloodTestSchema.parse({
         userId: Number(userId),
         datePerformed: new Date(datePerformed),
@@ -74,13 +92,17 @@ export function registerRoutes(app: Express) {
 
       const test = await storage.createBloodTest(testData);
 
-      // Trigger AI analysis
-      const analysis = await analyzeBloodTest(testData.results);
+      // 4. Generate AI analysis
+      // Note: In production, this should be moved to a Lambda function
+      const analysis = await analyzeBloodTest(JSON.parse(results));
+
+      // 5. Update test record with analysis
       const updatedTest = await storage.updateBloodTestAnalysis(test.id, analysis);
 
       res.json(updatedTest);
     } catch (error) {
-      res.status(400).json({ message: error.message });
+      console.error('Error processing test upload:', error);
+      res.status(400).json({ message: error instanceof Error ? error.message : 'Upload failed' });
     }
   });
 
@@ -95,7 +117,8 @@ export function registerRoutes(app: Express) {
       const shared = await storage.createSharedTest(shareData);
       res.json(shared);
     } catch (error) {
-      res.status(400).json({ message: error.message });
+      console.error('Error sharing test:', error);
+      res.status(400).json({ message: error instanceof Error ? error.message : 'Share failed' });
     }
   });
 
