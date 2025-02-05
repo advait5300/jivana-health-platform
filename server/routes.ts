@@ -11,7 +11,12 @@ import multer from "multer";
  * Configure multer for handling file uploads
  * Store files in memory for processing before S3 upload
  */
-const upload = multer({ memory: true });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+});
 
 interface FileRequest extends Request {
   file?: Express.Multer.File;
