@@ -2,32 +2,45 @@ import { pgTable, text, serial, integer, timestamp, boolean, jsonb } from "drizz
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+/**
+ * Users table schema
+ * Stores user account information and authentication details
+ */
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
-  cognitoId: text("cognito_id").notNull().unique(),
+  cognitoId: text("cognito_id").notNull().unique(), // AWS Cognito user identifier
   email: text("email").notNull().unique(),
 });
 
+/**
+ * Blood Tests table schema
+ * Stores blood test results and associated metadata
+ */
 export const bloodTests = pgTable("blood_tests", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
+  userId: integer("user_id").notNull(), // References users.id
   datePerformed: timestamp("date_performed").notNull(),
-  fileKey: text("file_key").notNull(),
-  results: jsonb("results").notNull(),
-  aiAnalysis: jsonb("ai_analysis"),
+  fileKey: text("file_key").notNull(), // S3 object key for the PDF report
+  results: jsonb("results").notNull(), // Structured test results
+  aiAnalysis: jsonb("ai_analysis"), // GPT-generated analysis
 });
 
+/**
+ * Shared Tests table schema
+ * Manages temporary access tokens for sharing test results
+ */
 export const sharedTests = pgTable("shared_tests", {
   id: serial("id").primaryKey(),
-  bloodTestId: integer("blood_test_id").notNull(),
-  sharedById: integer("shared_by_id").notNull(),
+  bloodTestId: integer("blood_test_id").notNull(), // References blood_tests.id
+  sharedById: integer("shared_by_id").notNull(), // References users.id
   sharedWithEmail: text("shared_with_email").notNull(),
   accessToken: text("access_token").notNull(),
   active: boolean("active").notNull().default(true),
 });
 
+// Zod schemas for input validation
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -49,6 +62,7 @@ export const insertSharedTestSchema = createInsertSchema(sharedTests).pick({
   accessToken: true,
 });
 
+// TypeScript types for use throughout the application
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type BloodTest = typeof bloodTests.$inferSelect;
